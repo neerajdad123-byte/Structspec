@@ -1,19 +1,7 @@
 # StructSpec
 
-> **Accelerate Qwen code generation up to 3× with zero extra VRAM.**  
+> **Accelerate Qwen code generation up to 3× with zero extra VRAM.**
 > Structural speculative decoding using Python syntax, Qwen token clusters, and n-gram rules — no draft model required.
-
-<p align="center">
-  <img src="docs/assets/demo.gif" alt="StructSpec live terminal visualization" width="720">
-</p>
-
-<p align="center">
-  <a href="#installation"><strong>Install</strong></a> ·
-  <a href="#quick-start"><strong>Quick Start</strong></a> ·
-  <a href="#main-modes"><strong>Modes</strong></a> ·
-  <a href="#benchmarks"><strong>Benchmarks</strong></a> ·
-  <a href="#contributing"><strong>Contribute</strong></a>
-</p>
 
 ---
 
@@ -23,15 +11,12 @@
 - [How It Works](#how-it-works)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
+- [Detailed Usage](#detailed-usage)
+- [Generating a Token Corpus](#generating-a-token-corpus)
 - [Main Modes](#main-modes)
 - [Benchmarks](#benchmarks)
 - [Live Terminal Visualization](#live-terminal-visualization)
 - [Trace Logging](#trace-logging)
-- [Packaging & Docker](#packaging--docker)
-- [Roadmap](#roadmap)
-- [Citations](#citations)
-- [Contributing](#contributing)
-- [License](#license)
 
 ---
 
@@ -84,30 +69,12 @@ The result is correct, greedy-identical output — just faster.
 
 ## Installation
 
-### PyPI (recommended)
+Install from source:
 
 ```bash
-pip install strictspec
-```
-
-### From source
-
-```bash
-git clone https://github.com/neerajanand/strictspec.git
-cd strictspec
+git clone https://github.com/neerajdad123-byte/Structspec.git
+cd Structspec
 pip install -e ".[all]"
-```
-
-### Docker
-
-```bash
-docker build -t strictspec .
-docker run --rm --gpus all \
-  -v /path/to/models:/models \
-  -v /path/to/corpus:/corpus \
-  strictspec \
-  --model /models/Qwen2.5-7B-Instruct-GGUF/Q4_K_M.gguf \
-  --token-json /corpus/engineering_dsa_tokens.json
 ```
 
 > **Requirements:** Python 3.10+, a Qwen GGUF model, and the `llama-cpp-python` backend.
@@ -196,45 +163,60 @@ Each source file becomes one example in the corpus. The model tokenizes the text
 Best for everyday use. Syntax rules chain together and rejected drafts are cheaply recovered with truncation.
 
 ```bash
-structspec-qwen --syntax-mode cluster --reject-mode truncate --live-mining
+structspec-qwen \
+  --model /path/to/model.gguf \
+  --token-json /path/to/tokens.json \
+  --syntax-mode cluster --reject-mode truncate --live-mining
 ```
 
 ### Safe Rejection Mode
 When correctness is paramount. Instead of truncating, cheaply replay the KV cache from the last accepted token.
 
 ```bash
-structspec-qwen --syntax-mode cluster --reject-mode seq-bonus --live-mining
+structspec-qwen \
+  --model /path/to/model.gguf \
+  --token-json /path/to/tokens.json \
+  --syntax-mode cluster --reject-mode seq-bonus --live-mining
 ```
 
 ### Live Terminal Visualization
 Real-time token stream with color-coded acceptance, throughput metrics, and a progress bar. Powered by **Rich**.
 
 ```bash
-structspec-qwen --rich-viz --tokens 80 --prompts 5
+structspec-qwen \
+  --model /path/to/model.gguf \
+  --token-json /path/to/tokens.json \
+  --rich-viz --tokens 80 --prompts 5
 ```
 
 **What you'll see:**
-- **🟢 Green** `✓` — accepted draft token
-- **🔴 Red** `✗` — rejected draft token
-- **🔵 Cyan** `+` — model bonus token (the next ground-truth token)
-- **⚪ White** `•` — verified pending token
+- **Green** `✓` — accepted draft token
+- **Red** `✗` — rejected draft token
+- **Cyan** `+` — model bonus token (the next ground-truth token)
+- **White** `•` — verified pending token
 
 ### Draft-Model Fallback
 Use a small draft model **only** when structural rules do not fire. StructSpec always tries rules first.
 
 ```bash
-structspec-qwen --draft-model /path/to/draft.gguf --draft-mistake-limit 1
+structspec-qwen \
+  --model /path/to/model.gguf \
+  --token-json /path/to/tokens.json \
+  --draft-model /path/to/draft.gguf --draft-mistake-limit 1
 ```
 
 ### Offline Pattern Observation
 Study Qwen token shapes and mined n-grams without running full inference benchmarks.
 
 ```bash
-structspec-qwen --observe-tokens 20 --observe-only
+structspec-qwen \
+  --model /path/to/model.gguf \
+  --token-json /path/to/tokens.json \
+  --observe-tokens 20 --observe-only
 ```
 
 ### Expanded Benchmark Suite
-Compare configurations side-by-side and generate charts:
+Compare configurations side-by-side:
 
 ```bash
 python -m benchmarks.bench_suite \
@@ -242,8 +224,6 @@ python -m benchmarks.bench_suite \
     --token-json /path/to/tokens.json \
     --prompts 20 --tokens 100
 ```
-
-Reports are saved to `benchmarks/reports/` as JSON and PNG charts.
 
 ---
 
@@ -270,13 +250,6 @@ draft acc : 709/782 = 90.7%
 ```
 
 Individual prompts (heap / linked-list boilerplate) reached **~3× wall-clock speedup**.
-
-### Visual Reports
-The benchmark suite generates comparison charts automatically:
-
-<p align="center">
-  <img src="benchmarks/reports/speedup_comparison.png" alt="Speedup comparison chart" width="600">
-</p>
 
 ---
 
@@ -320,89 +293,3 @@ Every run produces a detailed CSV trace (default: `qwen_spec_trace.csv`):
 | `tier` | Rule tier (e.g., `syntax_indent`, `det_ctx6`) |
 
 Use these traces to debug why a rule was rejected, build new grammar packs, or visualize acceptance heatmaps.
-
----
-
-## Packaging & Docker
-
-### PyPI Distribution
-
-```bash
-# Build and upload
-python -m build
-twine upload dist/*
-```
-
-The package is published as **`strictspec`**:
-
-```bash
-pip install strictspec
-```
-
-### Docker
-
-A `Dockerfile` is included for reproducible inference environments:
-
-```bash
-docker build -t strictspec:latest .
-docker run --rm --gpus all \
-  -v $(pwd)/models:/models \
-  -v $(pwd)/corpus:/corpus \
-  strictspec:latest \
-  --model /models/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
-  --token-json /corpus/engineering_dsa_tokens.json \
-  --prompts 10 --tokens 100 --rich-viz
-```
-
-Pre-built images will be published to GitHub Container Registry (`ghcr.io/neerajanand/strictspec`).
-
----
-
-## Roadmap
-
-- [ ] Backend-neutral API (`transformers`, `vLLM`, `SGLang`)
-- [ ] Tree verification for multi-draft branches
-- [ ] Persist live-mined rules across sessions
-- [ ] JSON / YAML / Markdown grammar packs
-- [ ] Web dashboard for acceptance rates and mistake clusters
-- [ ] Support for DeepSeek-Coder and Llama code models
-
----
-
-## Citations
-
-If you use StructSpec in your research, please cite:
-
-```bibtex
-@software{strictspec2024,
-  title = {StructSpec: Structural Speculative Decoding for Qwen Code Generation},
-  author = {StructSpec Contributors},
-  year = {2024},
-  url = {https://github.com/neerajanand/strictspec}
-}
-```
-
----
-
-## Contributing
-
-We love contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
-
-- 🐛 [Report bugs](https://github.com/neerajanand/strictspec/issues)
-- 💡 [Request features](https://github.com/neerajanand/strictspec/issues)
-- 💬 [Join discussions](https://github.com/neerajanand/strictspec/discussions)
-- 🏷️ Look for [`good first issue`](https://github.com/neerajanand/strictspec/labels/good%20first%20issue) labels
-
-### Social Media Strategy
-Help us reach 5,000 stars!
-
-- **Twitter/X** — Share short clips of `--rich-viz` in action with `#LLM` `#SpeculativeDecoding`
-- **Reddit** — Post benchmarks to r/LocalLLaMA and r/MachineLearning
-- **Hacker News** — "Show HN" when we hit a major release milestone
-- **Blog Posts** — Tutorials on "Zero-VRAM Speculative Decoding" are highly encouraged
-
----
-
-## License
-
-[MIT License](LICENSE) — see [LICENSE](LICENSE) for details.
