@@ -88,6 +88,7 @@ def run_one(
         str(prompts),
         "--tokens",
         str(tokens),
+        "--json-output",
     ] + extra_args
     t0 = time.time()
     result = subprocess.run(cmd, capture_output=True, text=True)
@@ -107,39 +108,60 @@ def run_one(
         "stderr": result.stderr,
         "returncode": result.returncode,
     }
-    for line in result.stdout.splitlines():
+
+    # Prefer structured JSON output emitted by the CLI
+    for line in reversed(result.stdout.splitlines()):
         line = line.strip()
-        if "passes" in line and "greedy=" in line and "spec=" in line:
-            parts = line.split()
-            for p in parts:
-                if p.startswith("greedy="):
-                    data["pass_g"] = int(p.split("=")[1])
-                elif p.startswith("spec="):
-                    data["pass_s"] = int(p.split("=")[1].rstrip(","))
-                elif p.startswith("speed="):
-                    try:
-                        data["pass_speedup"] = float(p.split("=")[1].rstrip("x"))
-                    except ValueError:
-                        pass
-        elif "wall time" in line and "greedy=" in line:
-            parts = line.split()
-            for p in parts:
-                if p.startswith("greedy="):
-                    data["time_g"] = float(p.split("=")[1].rstrip("s,"))
-                elif p.startswith("spec="):
-                    data["time_s"] = float(p.split("=")[1].rstrip("s,"))
-                elif p.startswith("speed="):
-                    try:
-                        data["time_speedup"] = float(p.split("=")[1].rstrip("x"))
-                    except ValueError:
-                        pass
-        elif "target eval tokens" in line:
-            parts = line.split()
-            for p in parts:
-                if p.startswith("greedy="):
-                    data["eval_g"] = int(p.split("=")[1])
-                elif p.startswith("spec="):
-                    data["eval_s"] = int(p.split("=")[1].rstrip(","))
+        if line.startswith("STRUCTSPEC_JSON:"):
+            try:
+                payload = json.loads(line.split("STRUCTSPEC_JSON:", 1)[1])
+                data["pass_g"] = payload.get("passes_greedy")
+                data["pass_s"] = payload.get("passes_spec")
+                data["pass_speedup"] = payload.get("pass_speedup", 1.0)
+                data["time_g"] = payload.get("time_greedy")
+                data["time_s"] = payload.get("time_spec")
+                data["time_speedup"] = payload.get("time_speedup", 1.0)
+                data["eval_g"] = payload.get("eval_greedy")
+                data["eval_s"] = payload.get("eval_spec")
+            except (json.JSONDecodeError, IndexError):
+                pass
+            break
+
+    # Fallback to human-readable parsing if JSON is missing
+    if data["pass_g"] is None:
+        for line in result.stdout.splitlines():
+            line = line.strip()
+            if "passes" in line and "greedy=" in line and "spec=" in line:
+                parts = line.split()
+                for p in parts:
+                    if p.startswith("greedy="):
+                        data["pass_g"] = int(p.split("=")[1])
+                    elif p.startswith("spec="):
+                        data["pass_s"] = int(p.split("=")[1].rstrip(","))
+                    elif p.startswith("speed="):
+                        try:
+                            data["pass_speedup"] = float(p.split("=")[1].rstrip("x"))
+                        except ValueError:
+                            pass
+            elif "wall time" in line and "greedy=" in line:
+                parts = line.split()
+                for p in parts:
+                    if p.startswith("greedy="):
+                        data["time_g"] = float(p.split("=")[1].rstrip("s,"))
+                    elif p.startswith("spec="):
+                        data["time_s"] = float(p.split("=")[1].rstrip("s,"))
+                    elif p.startswith("speed="):
+                        try:
+                            data["time_speedup"] = float(p.split("=")[1].rstrip("x"))
+                        except ValueError:
+                            pass
+            elif "target eval tokens" in line:
+                parts = line.split()
+                for p in parts:
+                    if p.startswith("greedy="):
+                        data["eval_g"] = int(p.split("=")[1])
+                    elif p.startswith("spec="):
+                        data["eval_s"] = int(p.split("=")[1].rstrip(","))
     return data
 
 

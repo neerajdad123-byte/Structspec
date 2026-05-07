@@ -44,11 +44,8 @@ if hasattr(sys.stderr, "reconfigure"):
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 
-DEFAULT_MODEL = (
-    r"C:\Users\neera\.lmstudio\models\Qwen\Qwen2.5-7B-Instruct-GGUF"
-    r"\qwen2.5-7b-instruct-q4_k_m-00001-of-00002.gguf"
-)
-DEFAULT_JSON = r"C:\Users\neera\OneDrive\Desktop\sep\engineering_dsa_tokens.json"
+# No hardcoded defaults — users must supply valid paths via CLI arguments.
+# This keeps the tool portable across operating systems and environments.
 
 
 PROMPTS = [
@@ -1105,8 +1102,39 @@ def refit_miner(miner: PatternMiner, sequences: list[list[int]]) -> None:
     miner.fit(sequences)
 
 
+def _check_file(path: str, label: str) -> Path:
+    p = Path(path)
+    if not p.exists():
+        print(
+            f"ERROR: {label} not found: {p}\n"
+            f"       Please provide a valid path via the --{label.replace(' ', '-')} argument.\n"
+            f"       Run with --help for usage details.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+    if not p.is_file():
+        print(f"ERROR: {label} is not a file: {p}", file=sys.stderr)
+        raise SystemExit(2)
+    return p
+
+
+def _model_compatibility_warning(model_path: str) -> None:
+    lower = model_path.lower()
+    if "qwen" not in lower:
+        print(
+            "\nWARNING: The current pattern miner and syntax rules are optimized for Qwen models.\n"
+            "         Using a different model may produce sub-optimal or incorrect results.\n"
+            "         See README.md for guidance on adapting StructSpec to other models.\n",
+            file=sys.stderr,
+        )
+
+
 def benchmark(args: argparse.Namespace) -> None:
-    corpus = QwenTokenCorpus(args.token_json)
+    model_path = _check_file(args.model, "model")
+    token_json_path = _check_file(args.token_json, "token-json")
+    _model_compatibility_warning(str(model_path))
+
+    corpus = QwenTokenCorpus(token_json_path)
     corpus.print_summary()
 
     miner = PatternMiner(
@@ -1312,11 +1340,31 @@ def benchmark(args: argparse.Namespace) -> None:
             writer.writerows(out_records)
         print(f"\n  wrote pass trace: {trace_path}")
 
+    if args.json_output:
+        summary = {
+            "identical_outputs": ok,
+            "total_prompts": len(prompts),
+            "passes_greedy": pass_g,
+            "passes_spec": pass_s,
+            "pass_speedup": pass_g / max(1, pass_s),
+            "eval_greedy": eval_g,
+            "eval_spec": eval_s,
+            "eval_ratio": eval_g / max(1, eval_s),
+            "time_greedy": time_g,
+            "time_spec": time_s,
+            "time_speedup": time_g / max(1e-9, time_s),
+            "draft_accepted": accepted_total if all_records else 0,
+            "draft_proposed": proposed_total if all_records else 0,
+            "draft_rejected": reject_total if all_records else 0,
+            "no_rule_passes": no_rule_total if all_records else 0,
+        }
+        print(f"STRUCTSPEC_JSON:{json.dumps(summary)}")
+
 
 def parse_args() -> argparse.Namespace:
     ap = argparse.ArgumentParser()
-    ap.add_argument("--model", default=DEFAULT_MODEL)
-    ap.add_argument("--token-json", default=DEFAULT_JSON)
+    ap.add_argument("--model", required=True, help="Path to target model GGUF file.")
+    ap.add_argument("--token-json", required=True, help="Path to token corpus JSON file.")
     ap.add_argument("--tokens", type=int, default=100)
     ap.add_argument("--prompts", type=int, default=20)
     ap.add_argument("--k", type=int, default=6)
@@ -1355,7 +1403,10 @@ def parse_args() -> argparse.Namespace:
                     help="seq-bonus cheaply recomputes bonus after rejection; rebuild replays KV after rejection.")
     ap.add_argument("--unsafe-fast-reject", action="store_true",
                     help="Deprecated alias for --reject-mode truncate.")
-    ap.add_argument("--trace-csv", default=r"C:\Users\neera\OneDrive\Desktop\sep\qwen_spec_trace.csv")
+    ap.add_argument("--trace-csv", default="qwen_spec_trace.csv",
+                    help="Path for the output CSV trace file (default: qwen_spec_trace.csv in cwd).")
+    ap.add_argument("--json-output", action="store_true",
+                    help="Emit a final JSON summary line prefixed with 'STRUCTSPEC_JSON:' for programmatic consumption.")
     return ap.parse_args()
 
 

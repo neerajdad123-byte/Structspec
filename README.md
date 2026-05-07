@@ -102,11 +102,17 @@ pip install -e ".[all]"
 
 ```bash
 docker build -t strictspec .
-docker run --rm --gpus all -v /path/to/models:/models strictspec \
-    --model /models/Qwen2.5-7B-Instruct-GGUF/Q4_K_M.gguf
+docker run --rm --gpus all \
+  -v /path/to/models:/models \
+  -v /path/to/corpus:/corpus \
+  strictspec \
+  --model /models/Qwen2.5-7B-Instruct-GGUF/Q4_K_M.gguf \
+  --token-json /corpus/engineering_dsa_tokens.json
 ```
 
 > **Requirements:** Python 3.10+, a Qwen GGUF model, and the `llama-cpp-python` backend.
+>
+> **Model Compatibility:** The built-in pattern miner and syntax rules are currently optimized for **Qwen** tokenization and Python code generation. You can run other GGUF models via `--model`, but you will see a warning and performance may vary. See [Generating a Token Corpus](#generating-a-token-corpus) for adapting StructSpec to new models.
 
 ---
 
@@ -114,14 +120,73 @@ docker run --rm --gpus all -v /path/to/models:/models strictspec \
 
 ```bash
 # Basic benchmark (20 prompts, 100 tokens)
-structspec-qwen --prompts 20 --tokens 100 --k 6 --live-mining
+structspec-qwen \
+  --model /path/to/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  --token-json /path/to/engineering_dsa_tokens.json \
+  --prompts 20 --tokens 100 --k 6 --live-mining
 
 # Interactive rich terminal visualization
-structspec-qwen --rich-viz --prompts 5 --tokens 80
+structspec-qwen \
+  --model /path/to/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  --token-json /path/to/engineering_dsa_tokens.json \
+  --rich-viz --prompts 5 --tokens 80
 
 # Observe how Qwen tokenizes your prompt
-structspec-qwen --observe-tokens 20 --observe-only
+structspec-qwen \
+  --model /path/to/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  --token-json /path/to/engineering_dsa_tokens.json \
+  --observe-tokens 20 --observe-only
 ```
+
+> **Note:** `--model` and `--token-json` are **required** arguments. There are no built-in default paths, so the tool works out-of-the-box on any OS. Run `structspec-qwen --help` for the full option list.
+
+---
+
+## Detailed Usage
+
+### Required Arguments
+
+| Argument | Description |
+|---|---|
+| `--model PATH` | Path to the target model GGUF file. |
+| `--token-json PATH` | Path to the token corpus JSON used by the pattern miner. |
+
+### Common Options
+
+| Option | Default | Description |
+|---|---|---|
+| `--tokens N` | `100` | Max tokens to generate per prompt. |
+| `--prompts N` | `20` | Number of built-in DSA prompts to run. |
+| `--k N` | `6` | Max draft chain length. |
+| `--syntax-mode {off,basic,cluster}` | `cluster` | Enable Python syntax backoff rules. |
+| `--reject-mode {truncate,seq-bonus,rebuild}` | `seq-bonus` | How to recover from rejected drafts. |
+| `--trace-csv PATH` | `qwen_spec_trace.csv` | Where to write the per-pass CSV trace. |
+| `--json-output` | off | Emit a final `STRUCTSPEC_JSON:{...}` summary for programmatic use. |
+
+---
+
+## Generating a Token Corpus
+
+The `--token-json` file is the fuel for the pattern miner. You can generate one from your own codebase using the helper script included in the repo:
+
+```bash
+python -m scripts.generate_token_corpus \
+  --model /path/to/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  --input-dir ./my-python-project/ \
+  --output my_corpus_tokens.json \
+  --glob "*.py"
+```
+
+Then use it with StructSpec:
+
+```bash
+structspec-qwen \
+  --model /path/to/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  --token-json my_corpus_tokens.json \
+  --prompts 20 --tokens 100
+```
+
+Each source file becomes one example in the corpus. The model tokenizes the text and stores token IDs alongside the raw code. Larger and more diverse corpora generally yield better hit rates.
 
 ---
 
@@ -280,9 +345,13 @@ A `Dockerfile` is included for reproducible inference environments:
 
 ```bash
 docker build -t strictspec:latest .
-docker run --rm --gpus all -v $(pwd)/models:/models strictspec:latest \
-    --model /models/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
-    --prompts 10 --tokens 100 --rich-viz
+docker run --rm --gpus all \
+  -v $(pwd)/models:/models \
+  -v $(pwd)/corpus:/corpus \
+  strictspec:latest \
+  --model /models/Qwen2.5-7B-Instruct-Q4_K_M.gguf \
+  --token-json /corpus/engineering_dsa_tokens.json \
+  --prompts 10 --tokens 100 --rich-viz
 ```
 
 Pre-built images will be published to GitHub Container Registry (`ghcr.io/neerajanand/strictspec`).
